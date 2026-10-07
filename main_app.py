@@ -1,12 +1,15 @@
 import argparse
+import os
 import uuid
 from contextlib import asynccontextmanager
 
+import qrcode
+import qrcode.image.svg
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
 from fastapi.responses import FileResponse
 from pydantic_core import PydanticSerializationError
 
-from quiz import QuizSession, QuizSessionState, _generate_quiz
+from quiz import QuizSession, QuizSessionState, generate_quiz
 
 quiz_session = QuizSession()
 
@@ -16,6 +19,13 @@ def parseArgs():
     parser.add_argument("--questions", type=int, default=5)
     parser.add_argument("--port", type=int, default=8000, help="local server port")
     return parser.parse_args()
+
+def generate_qrcode(url: str) -> str:
+    svg = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathFillImage)
+    svg_text = svg.to_string()
+    if isinstance(svg_text, bytes):
+        svg_text = svg_text.decode("utf-8")
+    return svg_text
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,30 +37,44 @@ async def lifespan(app: FastAPI):
     # Start up
     args = parseArgs()
     quiz_session.topic = args.topic
-    quiz_session.questions = await _generate_quiz(
+    quiz_session.questions = await generate_quiz(
         args.topic,
         args.questions,
     )
     quiz_session.num_questions = len(quiz_session.questions)
-    print("="*10)
-    print("Questions are ready")
-    print(f"[INFO] Host URL:   http://localhost:{args.port}/?token={quiz_session.host_access_token}")
-    print(f"[INFO] Player URL: http://localhost:{args.port}/")
-    print("="*10)
+    tunnel_url = os.getenv("PLAYER_URL")
+    quiz_session.player_url = tunnel_url
+    if tunnel_url is not None:
+        quiz_session.player_qrcode_svg = generate_qrcode(tunnel_url)
+    
+    print("=" * 30)
+    print("Quiz session is ready!")
+    print(
+        f"Host URL:\thttp://localhost:{args.port}/?token={quiz_session.host_access_token}"
+    )
+    print(f"Player URL:\thttp://localhost:{args.port}/")
+    print(f"           \t{tunnel_url}")
+    print("=" * 30)
     # End start up
     yield
     # Shut down
     # End shut down
 
+
 app = FastAPI(lifespan=lifespan)
 
+
 async def broadcast_state():
+    if quiz_session is None:
+        return
     q = quiz_session.current_question()
     question_payload = None
     if q is not None:
         question_payload = {
             "id": q.id,
-            "question": q.question if quiz_session.state is not QuizSessionState.LEADERBOARD else None,
+            "question": q.question
+            if quiz_session.state is not QuizSessionState.LEADERBOARD
+            else None,
             "choices": q.choices,
             "correct_index": q.correct_index
             if quiz_session.state
@@ -78,6 +102,9 @@ async def broadcast_state():
     }
 
     if quiz_session.host_socket:
+        if quiz_session.state == QuizSessionState.LOBBY:
+            payload["player_url"] = quiz_session.player_url,
+            payload["player_qrcode_svg"] = quiz_session.player_qrcode_svg,
         try:
             await quiz_session.host_socket.send_json(
                 {
@@ -115,16 +142,18 @@ async def broadcast_state():
 
 @app.get("/")
 async def frontend(token: str = ""):
-    print(token, quiz_session.host_access_token)
     if token == quiz_session.host_access_token:
         return FileResponse("static/host.html")
     return FileResponse("static/index.html")
 
+
 @app.websocket("/ws")
-async def websocket_handler(ws:WebSocket, token: str = ""):
+async def websocket_handler(ws: WebSocket, token: str = ""):
     if token == quiz_session.host_access_token:
         await host_websocket(ws)
+        return
     await player_websocket(ws)
+
 
 async def player_websocket(ws: WebSocket):
     await ws.accept()
@@ -157,7 +186,7 @@ async def player_websocket(ws: WebSocket):
                 choic_idx = data.get("choice_index")
                 if quiz_session.player_sockets.get(player_id) is ws:
                     quiz_session.record_answer(player_id, choic_idx)
-                await broadcast_state()  
+                await broadcast_state()
     except WebSocketException, WebSocketDisconnect:
         if quiz_session.player_sockets.get(player_id) is ws:
             quiz_session.disconnect_player(player_id, ws)

@@ -10,7 +10,8 @@ dependencies = [
     "fastapi",
     "granian",
     "pydantic",
-    "openrouter"
+    "openrouter",
+    "qrcode"
 ]
 license = "MIT"
 

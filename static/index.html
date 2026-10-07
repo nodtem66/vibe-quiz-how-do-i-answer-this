@@ -54,7 +54,6 @@
 
         ws.onmessage = (evt) => {
             state = JSON.parse(evt.data);
-            console.log(state);
             if (state.error) {
                 joinError = state.error;
                 playerSession = null;

@@ -42,6 +42,8 @@ class QuizSession:
         ] = {}  # question_id -> {player_id: elapsed_time}
         self.host_socket: WebSocket | None = None
         self.player_sockets: dict[str, WebSocket] = {}
+        self.player_url: str | None = None
+        self.player_qrcode_svg: str | None = None
         self.host_access_token: str = secrets.token_urlsafe(32)
 
     def current_question(self) -> Question | None:

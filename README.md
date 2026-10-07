@@ -17,21 +17,12 @@ The goals are simple:
 
 ### Requirements
 
-- Python 3.14 or newer
-- An OpenRouter API key
+- [Python](http://python.org/) 3.14 or newer
+- An [OpenRouter](http://openrouter.ai/) API key
 - A network connection for quiz generation
+- [Cloudflared](https://github.com/cloudflare/cloudflared)
 
 ### Install dependencies
-
-Create and activate a virtual environment, then install the project dependencies:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .
-```
-
-If you are not using the project package configuration, install the required packages directly:
 
 ```powershell
 python -m pip install fastapi granian openrouter pydantic
