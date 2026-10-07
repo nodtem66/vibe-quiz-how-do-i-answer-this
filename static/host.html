@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz (Host)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col items-center justify-center p-1">
+    <div id="app" class="w-full max-w-xl bg-white rounded-xl p-6 shadow-xl border border-slate-200"></div>
+    <script>
+        const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + `${location.pathname.replace(/\/$/, '')}/ws` + location.search);
+        let state = {};
+
+        ws.onopen = () => ws.send(JSON.stringify({ action: 'INIT_HOST' }));
+        ws.onmessage = (evt) => {
+            state = JSON.parse(evt.data);
+            render();
+        };
+
+        function nextState() {
+            ws.send(JSON.stringify({ action: 'NEXT_STATE' }));
+        }
+
+        function render() {
+            const c = document.getElementById('app');
+            c.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b border-slate-200 pb-2">
+                    <span class="text-xs font-bold text-emerald-600 uppercase tracking-widest">Host Dashboard</span>
+                    <span class="bg-slate-100 px-3 py-1 rounded-full text-xs">Players: ${state.players_count || 0}</span>
+                </div>
+                ${state.state === 'LOBBY' ? `
+                    <button onclick="nextState()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-lg text-lg transition">Start Game</button>
+                ` : ''}
+                ${(state.state !== 'LEADERBOARD' && state.state !== 'FINISHED' && state.question) ? `
+                    <div class="bg-slate-50 p-4 rounded-lg mb-4 border border-slate-200">
+                        <span class="text-xs text-slate-600">Question ${state.question_num}/${state.total_questions}</span>
+                        <h2 class="text-xl font-bold mt-1 wrap-break-word">${state.question.question}</h2>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mb-6">
+                        ${state.question.choices.map((opt, i) => `
+                            <div class="p-3 rounded-lg font-bold ${state.question.correct_index === i ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-900'}">${opt}</div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${state.state === 'LEADERBOARD' || state.state === 'FINISHED' ? `
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-2 text-slate-700">Leaderboard: Top 10</h3>
+                        <div class="space-y-1">
+                            ${state.leaderboard.slice(0, 10).map((p, i) => `
+                                <div class="flex justify-between bg-slate-50 p-2 px-4 rounded text-sm"><span>${i + 1}. ${p.name}</span><span class="font-bold text-amber-600">${p.score} pts</span></div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${state.state !== 'LOBBY' && state.state !== 'FINISHED' ? `
+                    <button onclick="nextState()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition">
+                        ${state.state === 'QUESTION' ? 'Reveal Answer' : 'Next Question'}
+                    </button>
+                ` : ''}
+            `;
+        }
+    </script>
+</body>
+</html>

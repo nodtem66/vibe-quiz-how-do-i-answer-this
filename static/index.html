@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col items-center justify-center p-1">
+    <div id="app" class="w-full max-w-xl bg-white rounded-xl p-6 shadow-xl border border-slate-200"></div>
+    <script>
+        // Player frontend
+        const randomAdjectives = ['Happy', 'Smart', 'Clever', 'Curious', 'Sexy', 'Awesome', 'Sad', 'Fancy', 'Skeptical'];
+        const randomNouns = ['Polymer', 'Ribosome', 'Collagen', 'Pipet', 'Centrifuge', 'Noodle', 'Microfluidic', 'Nanoparticle', 'Cortex', 'Aorta', 'Scaffold', 'Microcontroller'];
+        function randomizeName() {
+            const adjective = randomAdjectives[Math.floor(Math.random() * randomAdjectives.length)];
+            const noun = randomNouns[Math.floor(Math.random() * randomNouns.length)];
+            return `${adjective} ${noun}`;
+        }
+        // Random name and session management
+        const playerSessionKey = 'quiz_player_session.5641bz';
+        let playerSession = null;
+        const storedPlayerSession = localStorage.getItem(playerSessionKey);
+        if (storedPlayerSession) {
+            try {
+                const parsedSession = JSON.parse(storedPlayerSession);
+                if (typeof parsedSession.player_id === 'string' && typeof parsedSession.name === 'string') {
+                    playerSession = parsedSession;
+                } else {
+                    localStorage.removeItem(playerSessionKey);
+                }
+            } catch (error) {
+                localStorage.removeItem(playerSessionKey);
+            }
+        
+        }
+        // Player connection
+        const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+        let answer_idx = null;
+        let state = {};
+        let joinError = '';
+        let joinName = playerSession ? playerSession.name : randomizeName();
+
+        ws.onopen = () => {
+            if (playerSession !== null) {
+                const { player_id, name } = playerSession;
+                ws.send(JSON.stringify({
+                    action: 'JOIN_PLAYER',
+                    player_id,
+                    name
+                }));
+            }
+        };
+
+        ws.onmessage = (evt) => {
+            state = JSON.parse(evt.data);
+            console.log(state);
+            if (state.error) {
+                joinError = state.error;
+                playerSession = null;
+                render();
+                return;
+            }
+            joinError = '';
+            if (!state.has_answered) {
+                answer_idx = null;
+            }
+            if (state.state === 'FINISHED') {
+                localStorage.removeItem(playerSessionKey);
+            } else if (state.player_id) {
+                playerSession = { player_id: state.player_id, name: playerSession.name };
+                localStorage.setItem(playerSessionKey, JSON.stringify(playerSession));
+            }
+            render();
+        };
+
+        function joinGame() {
+            const name = document.getElementById('nickname').value || 'Anonymous';
+            joinName = name;
+            playerSession = { player_id: null, name };
+            joinError = '';
+            ws.send(JSON.stringify({ action: 'JOIN_PLAYER', name }));
+        }
+
+        function updateRandomName() {
+            joinName = randomizeName()
+            joinError = '';
+            render();
+            document.getElementById('nickname').focus();
+        }
+
+        function sendAnswer(idx) {
+            answer_idx = idx;
+            ws.send(JSON.stringify({ action: 'SUBMIT_ANSWER', choice_index: idx }));
+        }
+
+        function render() {
+            renderPlayer(document.getElementById('app'));
+        }
+
+        function renderPlayer(c) {
+            if (!state.state) {
+                if (playerSession) {
+                    c.innerHTML = `
+                        <div class="text-center py-8">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500 mb-4"></div>
+                            <h2 class="text-xl font-bold">Rejoining session...</h2>
+                        </div>
+                    `;
+                    return;
+                }
+                c.innerHTML = `
+                    <h2 class="text-xl font-bold mb-4">Choose your name</h2>
+                    <div class="relative mb-1">
+                        <input id="nickname" type="text" value="${joinName.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" placeholder="Your Nickname" class="w-full p-3 pr-12 rounded bg-white border ${joinError ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'} text-slate-900 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        <button type="button" onclick="updateRandomName()" title="Generate random name" aria-label="Generate random name" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-indigo-600 transition">
+                            🎲
+                        </button>
+                    </div>
+                    ${joinError ? `<p class="text-sm text-red-600 mb-3">${joinError}</p>` : '<div class="mb-3"></div>'}
+                    <button onclick="joinGame()" class="text-white w-full bg-indigo-600 hover:bg-indigo-700 font-bold py-3 rounded-lg transition">Join Session</button>
+                `;
+                return;
+            }
+
+            if (state.state === 'LOBBY') {
+                c.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500 mb-4"></div>
+                        <h2 class="text-2xl font-bold">You are in!</h2>
+                        <p class="text-slate-600 mt-2">Waiting for the host to start the game...</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (state.state === 'QUESTION') { 
+                c.innerHTML = `
+                    <h2 class="text-lg font-bold mb-4 text-center wrap-break-word">${state.question.question}</h2>
+                    <div class="grid grid-cols-1 gap-3">
+                        ${state.question.choices.map((opt, i) => `
+                            <button onclick="sendAnswer(${i})" class="font-bold p-4 rounded-lg text-left transition shadow-lg text-slate-900 border border-slate-100 ${i == answer_idx ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : ''}">
+                                ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                `;
+                return;
+            }
+
+            if (state.state === 'REVEAL') {
+                c.innerHTML = `
+                    <div class="text-center py-6">
+                        <h2 class="text-xl font-bold mb-2">Round Finished</h2>
+                        <p class="text-slate-600">Check the main screen for details!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (state.state === 'LEADERBOARD' || state.state === 'FINISHED') {
+                c.innerHTML = `
+                    <div class="text-center py-6">
+                        <h2 class="text-2xl font-black mb-4">Scores</h2>
+                        <div class="space-y-2">
+                            ${state.leaderboard.map((p, i) => `
+                                <div class="flex justify-between bg-slate-50 p-3 rounded-lg text-sm">
+                                    <span>${i + 1}. ${p.name}</span>
+                                    <span class="font-bold text-amber-600">${p.score} pts</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        render();
+    </script>
+</body>
+</html>

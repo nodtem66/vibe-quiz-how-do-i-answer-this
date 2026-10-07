@@ -1,0 +1,16 @@
+[project]
+name = "quiz-server"
+version = "0.1.0"
+description = "A simple quiz server"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "granian",
+    "pydantic",
+    "openrouter"
+]
+license = "MIT"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
